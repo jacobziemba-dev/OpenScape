@@ -301,35 +301,13 @@ export default function OpenScape() {
     const handleShop = (action, item, index) => {
         setGameState(prev => {
             const next = { ...prev };
-            const p = next.player;
             if (action === 'sell') {
-                 // Sell: Remove item, give coins. Value = item.value * 0.4
-                 const val = Math.floor(item.value * 0.4) || 1;
-                 p.inventory = InventorySystem.removeItem(p.inventory, index);
-                 p.inventory = InventorySystem.addItem(p.inventory, ITEM_DB.coins, val);
-                 next.messages.push({text:`Sold ${item.name} for ${val} coins`, type:'game'});
+                 const result = InventorySystem.handleShopSell(next, { item, index });
+                 return result;
             } else { // buy
-                 // Buy: Check coins, remove coins, add item.
-                 const cost = item.value || 1;
-                 const coins = p.inventory.find(i => i.id === 'coins');
-                 if (coins && coins.qty >= cost) {
-                      if (InventorySystem.addItem(p.inventory, item, 1).length <= 20) { // Check space roughly
-                           // Deduct coins
-                           coins.qty -= cost;
-                           if (coins.qty <= 0) {
-                               const cIdx = p.inventory.findIndex(i => i.id === 'coins');
-                               p.inventory = InventorySystem.removeItem(p.inventory, cIdx);
-                           }
-                           p.inventory = InventorySystem.addItem(p.inventory, item, 1);
-                           next.messages.push({text:`Bought ${item.name}`, type:'game'});
-                      } else {
-                           next.messages.push({text:"Inventory full", type:'sys'});
-                      }
-                 } else {
-                      next.messages.push({text:"Not enough coins", type:'sys'});
-                 }
+                 const result = InventorySystem.handleShopBuy(next, { item });
+                 return result;
             }
-            return next;
         });
     }
 
