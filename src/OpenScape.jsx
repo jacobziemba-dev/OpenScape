@@ -13,6 +13,8 @@ import { LootSystem, ITEM_DB } from './engine/systems/LootSystem';
 import { CombatSystem } from './engine/systems/CombatSystem';
 import { MovementSystem } from './engine/systems/MovementSystem';
 import { ActionDispatcher } from './engine/ActionDispatcher';
+import { startPhaserGame, destroyPhaserGame } from './engine/PhaserGame';
+import { updatePhaserState } from './engine/PhaserGame';
 
 /* ==========================================================================
    MAIN REACT COMPONENT (OpenScape.jsx)
@@ -26,6 +28,24 @@ export default function OpenScape() {
     const [modal, setModal] = useState(null);
     const [scale, setScale] = useState(1);
     const gameContainerRef = useRef(null);
+
+    // Phaser integration
+    useEffect(() => {
+        if (started && gameContainerRef.current) {
+            // Start Phaser and pass initial state
+            startPhaserGame({ state: gameState, onAction: null, containerId: 'phaser-container' });
+        }
+        return () => {
+            destroyPhaserGame();
+        };
+    }, [started]);
+
+    // Sync gameState changes to Phaser
+    useEffect(() => {
+        if (started) {
+            updatePhaserState(gameState);
+        }
+    }, [gameState, started]);
 
     // --- GAME STATE ---
     const [gameState, setGameState] = useState({
@@ -333,61 +353,16 @@ export default function OpenScape() {
         </div>
     );
 
+    // Phaser will handle all world/canvas rendering.
+    // Only UI overlays, menus, and inventory remain in React.
     return (
         <div className="h-[100dvh] w-full bg-black font-sans text-stone-200 overflow-hidden flex flex-col md:items-center md:justify-center"
              onClick={() => { setContextMenu(null); }}>
+          {/* Phaser canvas will be injected below this div by PhaserGame.js */}
+          <div ref={gameContainerRef} id="phaser-container" style={{ width: '100%', height: '100%', flex: 1, position: 'relative' }} />
 
-          <div className="w-full h-full md:w-[850px] md:h-[600px] flex flex-col md:flex-row bg-stone-800 md:border-[6px] border-stone-600 md:rounded-lg shadow-2xl relative overflow-hidden rpg-bevel">
-
-            <div className="md:hidden h-12 bg-stone-800 border-b-2 border-stone-950 flex items-center justify-between px-3 shrink-0">
-                 <span className="font-bold text-yellow-600 tracking-widest text-sm">OPENSCAPE</span>
-                 <div className="text-xs text-stone-500 font-mono">TICK: {gameState.tick}</div>
-            </div>
-
-            <div className="relative flex-1 bg-black overflow-hidden flex items-center justify-center touch-none" ref={gameContainerRef}>
-                 <div style={{ transform: `scale(${scale})`, width: CONFIG.VIEWPORT_WIDTH*CONFIG.TILE_SIZE, height: CONFIG.VIEWPORT_HEIGHT*CONFIG.TILE_SIZE }}
-                      className="grid gap-0 relative shadow-2xl origin-center transition-transform duration-200">
-                      {Array.from({length: CONFIG.VIEWPORT_HEIGHT}).map((_,y)=>Array.from({length: CONFIG.VIEWPORT_WIDTH}).map((_,x)=>{
-                          const wx=sx+x, wy=sy+y;
-                          const tile = map[wy]?.[wx];
-                          const isBorder = tile === 1;
-                          const isFloor = tile === 3;
-                          const res=gameState.resources.find(r=>r.x===wx&&r.y===wy);
-                          const npc=gameState.npcs.find(n=>n.x===wx&&n.y===wy&&n.status!=='DEAD');
-                          const item=gameState.groundItems.find(i=>i.x===wx&&i.y===wy);
-
-                          let bg = "bg-[#2d4a1c]";
-                          if(isBorder) bg = "bg-blue-800 animate-pulse";
-                          if(isFloor) bg = "bg-stone-600";
-
-                          const inPath = player.pathQueue.some(step => step.x === wx && step.y === wy);
-
-                          return (
-                              <div key={`${wx}-${wy}`} style={{width:CONFIG.TILE_SIZE, height:CONFIG.TILE_SIZE, left:x*CONFIG.TILE_SIZE, top:y*CONFIG.TILE_SIZE}}
-                                   className={`absolute ${bg} flex items-center justify-center cursor-pointer border-white/5 border`}
-                                   onClick={()=>handleTileClick(wx,wy)}
-                                   onContextMenu={(e)=>handleContext(e, 'tile', null, null)}>
-
-                                   {inPath && <div className="absolute inset-2 border border-white/30 rounded-full animate-pulse"></div>}
-
-                                   {res && res.status==='ACTIVE' && <span className="text-2xl drop-shadow-lg select-none z-10">{res.type==='tree'?'🌲':res.type==='bank'?'🏦':'🪨'}</span>}
-                                   {res && res.status==='DEPLETED' && <span className="text-xl opacity-40 select-none grayscale">🌑</span>}
-                                   {item && !npc && <span className="text-sm absolute bottom-1 right-1 animate-bounce select-none z-10">{item.icon}</span>}
-                                   {npc && <div className="flex flex-col items-center z-20"><span className={`text-2xl select-none`}>{npc.type==='shop'?'🧙‍♂️':'👹'}</span>{npc.type==='enemy'&&<div className="w-8 h-1 bg-red-900"><div className="h-full bg-green-500" style={{width:`${(npc.hp/npc.maxHp)*100}%`}}></div></div>}</div>}
-                                   {player.x===wx && player.y===wy && <span className="text-2xl drop-shadow-xl select-none z-30">🛡️</span>}
-
-                                   {gameState.hitsplats.filter(h=>h.x===wx&&h.y===wy).map(h=>(
-                                       <div key={h.id} className={`absolute -top-8 z-50 font-bold text-xs whitespace-nowrap animate-float ${h.type==='xp'?'text-yellow-300 text-lg':h.type==='indicator'?'text-white text-lg':'bg-red-600 text-white px-1 rounded-full border border-black'}`}>{h.val}</div>
-                                   ))}
-                              </div>
-                          );
-                      }))}
-                 </div>
-                 {player.pendingAction && <div className="absolute bottom-4 left-4 bg-black/60 text-stone-300 px-3 py-1 rounded-full text-xs border border-white/10">🤖 Pathing...</div>}
-                 {player.action && <div className="absolute top-4 bg-black/60 text-yellow-400 border border-yellow-600/50 px-4 py-1 rounded-full text-xs font-bold uppercase tracking-wide animate-pulse">Action: {player.action.type}</div>}
-            </div>
-
-            <div className={`bg-stone-800 md:w-64 md:border-l-[4px] border-stone-600 flex flex-col z-20 transition-all duration-300 ease-in-out rpg-bevel ${window.innerWidth < 768 ? `fixed bottom-[60px] left-0 right-0 border-t-[4px] shadow-[0_-10px_40px_rgba(0,0,0,0.5)] ${mobilePanelOpen ? 'translate-y-0 opacity-100' : 'translate-y-[120%] opacity-0'}` : 'relative h-full'}`} style={{maxHeight: window.innerWidth<768 ? '60vh' : 'auto'}}>
+          {/* UI overlays, menus, and inventory panels remain here */}
+          <div className={`bg-stone-800 md:w-64 md:border-l-[4px] border-stone-600 flex flex-col z-20 transition-all duration-300 ease-in-out rpg-bevel ${window.innerWidth < 768 ? `fixed bottom-[60px] left-0 right-0 border-t-[4px] shadow-[0_-10px_40px_rgba(0,0,0,0.5)] ${mobilePanelOpen ? 'translate-y-0 opacity-100' : 'translate-y-[120%] opacity-0'}` : 'relative h-full'}`} style={{maxHeight: window.innerWidth<768 ? '60vh' : 'auto'}}>
                 <div className="md:hidden w-full h-4 bg-stone-700 flex items-center justify-center cursor-pointer" onClick={()=>setMobilePanelOpen(false)}><div className="w-10 h-1 bg-stone-500 rounded-full"></div></div>
                 <div className="flex bg-stone-800 border-b border-stone-600 select-none">
                     <TabBtn icon={<Backpack size={18}/>} active={activeTab==='inventory'} onClick={()=>setActiveTab('inventory')} label="INV"/>
@@ -398,33 +373,34 @@ export default function OpenScape() {
                     {activeTab === 'inventory' && (
                         <>
                             <div className="grid grid-cols-2 gap-2 mb-2">
-                                 <EquipSlot name="Main Hand" item={player.equipment.main_hand} onContext={(e)=>handleContext(e,'equipment',player.equipment.main_hand,-1)}/>
-                                 <EquipSlot name="Off Hand" item={player.equipment.off_hand} onContext={(e)=>handleContext(e,'equipment',player.equipment.off_hand,-1)}/>
+                                 <EquipSlot name="Main Hand" item={gameState.player.equipment.main_hand} onContext={(e)=>handleContext(e,'equipment',gameState.player.equipment.main_hand,-1)}/>
+                                 <EquipSlot name="Off Hand" item={gameState.player.equipment.off_hand} onContext={(e)=>handleContext(e,'equipment',gameState.player.equipment.off_hand,-1)}/>
                             </div>
                             <div className="grid grid-cols-4 gap-2">
-                                {player.inventory.map((item, i) => (
+                                {gameState.player.inventory.map((item, i) => (
                                     <div key={i} onContextMenu={(e)=>handleContext(e, 'inventory', item, i)} onClick={(e)=>window.innerWidth<768 && handleContext(e, 'inventory', item, i)} className="aspect-square bg-stone-900 border-2 border-stone-700 rounded-sm flex items-center justify-center text-xl relative cursor-pointer shadow-[inset_0_2px_4px_rgba(0,0,0,0.5)] hover:border-yellow-600">
                                         {item.icon}
                                         {item.stackable && <span className="absolute top-0 left-1 text-[9px] text-yellow-400 font-mono">{item.qty}</span>}
                                         {(item.type === 'weapon' || item.type === 'armor') && <span className="absolute bottom-0 right-0 text-[8px] bg-blue-900 text-white px-1">E</span>}
                                     </div>
                                 ))}
-                                {Array.from({length:20-player.inventory.length}).map((_,i)=><div key={`e${i}`} className="aspect-square bg-stone-950/30 rounded-sm border border-white/5"></div>)}
+                                {Array.from({length:20-gameState.player.inventory.length}).map((_,i)=><div key={`e${i}`} className="aspect-square bg-stone-950/30 rounded-sm border border-white/5"></div>)}
                             </div>
                         </>
                     )}
-                    {activeTab === 'stats' && <div className="space-y-1">{Object.entries(player.skills).map(([k,v])=>(<div key={k} className="flex items-center justify-between bg-stone-900/50 p-1 px-2 rounded border border-stone-800"><span className="capitalize text-stone-400 text-xs">{k}</span><span className="text-yellow-500 font-mono text-sm">{k==='hitpoints'?Math.floor(MathUtils.getLevel(v)/10):MathUtils.getLevel(v)}</span></div>))}</div>}
+                    {activeTab === 'stats' && <div className="space-y-1">{Object.entries(gameState.player.skills).map(([k,v])=>(<div key={k} className="flex items-center justify-between bg-stone-900/50 p-1 px-2 rounded border border-stone-800"><span className="capitalize text-stone-400 text-xs">{k}</span><span className="text-yellow-500 font-mono text-sm">{k==='hitpoints'?Math.floor(MathUtils.getLevel(v)/10):MathUtils.getLevel(v)}</span></div>))}</div>}
                     {activeTab === 'chat' && <div className="flex flex-col h-full text-[11px] font-mono leading-relaxed text-stone-300 space-y-1">{gameState.messages.map((m,i)=><div key={i} className={m.type==='sys'?'text-yellow-500':''}>{m.text}</div>)}</div>}
                 </div>
             </div>
 
-            <div className="md:hidden fixed bottom-0 left-0 right-0 h-[60px] bg-stone-900 border-t-2 border-stone-700 flex justify-around items-center z-50 pb-safe">
+          {/* Mobile nav remains unchanged */}
+          <div className="md:hidden fixed bottom-0 left-0 right-0 h-[60px] bg-stone-900 border-t-2 border-stone-700 flex justify-around items-center z-50 pb-safe">
                 <NavBtn icon={<Backpack/>} active={activeTab==='inventory' && mobilePanelOpen} onClick={()=>{setActiveTab('inventory'); setMobilePanelOpen(prev => activeTab==='inventory' ? !prev : true);}} />
                 <NavBtn icon={<Activity/>} active={activeTab==='stats' && mobilePanelOpen} onClick={()=>{setActiveTab('stats'); setMobilePanelOpen(prev => activeTab==='stats' ? !prev : true);}} />
                 <NavBtn icon={<MessageSquare/>} active={activeTab==='chat' && mobilePanelOpen} onClick={()=>{setActiveTab('chat'); setMobilePanelOpen(prev => activeTab==='chat' ? !prev : true);}} />
-            </div>
           </div>
 
+          {/* Context menu and modal overlays remain unchanged */}
           {contextMenu && (
             <div className="fixed inset-0 z-[100] bg-black/20" onClick={()=>setContextMenu(null)}>
                 <div className="absolute bg-[#35312d] border-2 border-stone-500 shadow-xl w-40 overflow-hidden rpg-menu" style={{top:Math.min(contextMenu.y, window.innerHeight-180), left:Math.min(contextMenu.x, window.innerWidth-170)}}>
@@ -455,7 +431,7 @@ export default function OpenScape() {
                               <h4 className="text-[10px] text-stone-500 uppercase font-bold mb-2">{modal==='bank'?'Storage':'Stock'}</h4>
                               <div className="grid grid-cols-6 gap-2">
                                  {modal==='bank'
-                                    ? player.bank.map((item,i)=><ItemIcon key={i} item={item} onClick={()=>handleBank('withdraw', item, i)}/>)
+                                    ? gameState.player.bank.map((item,i)=><ItemIcon key={i} item={item} onClick={()=>handleBank('withdraw', item, i)}/>)
                                     : Object.values(ITEM_DB).filter(i=>i.value>0).map((item,i)=><ItemIcon key={i} item={item} onClick={()=>handleShop('buy', item, -1)}/>)
                                  }
                               </div>
@@ -463,7 +439,7 @@ export default function OpenScape() {
                           <div className="bg-stone-900/50 p-2 rounded border border-stone-700/50">
                               <h4 className="text-[10px] text-stone-500 uppercase font-bold mb-2">Inventory</h4>
                               <div className="grid grid-cols-6 gap-2">
-                                 {player.inventory.map((item,i)=><ItemIcon key={i} item={item} onClick={()=>modal==='bank'?handleBank('deposit',item,i):handleShop('sell',item,i)}/>)}
+                                 {gameState.player.inventory.map((item,i)=><ItemIcon key={i} item={item} onClick={()=>modal==='bank'?handleBank('deposit',item,i):handleShop('sell',item,i)}/>)}}
                               </div>
                           </div>
                       </div>
